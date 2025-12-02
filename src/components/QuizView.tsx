@@ -2,7 +2,7 @@ import { useState } from "react";
 import { QuizCard } from "./QuizCard";
 import { Button } from "./ui/button";
 import { PassMeter } from "./PassMeter";
-import { ArrowRight, RefreshCw, Trophy } from "lucide-react";
+import { ArrowRight, RefreshCw, Trophy, FileText } from "lucide-react";
 
 interface Quiz {
   id: string;
@@ -11,50 +11,34 @@ interface Quiz {
   correctIndex: number;
 }
 
-const sampleQuizzes: Quiz[] = [
-  {
-    id: "1",
-    question: "What is the primary product of photosynthesis?",
-    options: ["Oxygen", "Carbon dioxide", "Glucose", "Water"],
-    correctIndex: 2,
-  },
-  {
-    id: "2",
-    question: "Where does the light-dependent reaction of photosynthesis take place?",
-    options: ["Stroma", "Cytoplasm", "Thylakoid membrane", "Cell wall"],
-    correctIndex: 2,
-  },
-  {
-    id: "3",
-    question: "According to Newton's Second Law, what happens if you double the force on an object?",
-    options: [
-      "Acceleration halves",
-      "Acceleration doubles",
-      "Mass doubles",
-      "Velocity stays constant"
-    ],
-    correctIndex: 1,
-  },
-  {
-    id: "4",
-    question: "Which gas is released as a byproduct of photosynthesis?",
-    options: ["Nitrogen", "Carbon dioxide", "Oxygen", "Hydrogen"],
-    correctIndex: 2,
-  },
-  {
-    id: "5",
-    question: "What is the unit of force in the SI system?",
-    options: ["Joule", "Watt", "Newton", "Pascal"],
-    correctIndex: 2,
-  },
-];
+interface QuizViewProps {
+  quizzes: Quiz[];
+  onGoToNotes: () => void;
+}
 
-export const QuizView = () => {
-  const [quizzes] = useState<Quiz[]>(sampleQuizzes);
+export const QuizView = ({ quizzes, onGoToNotes }: QuizViewProps) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [correctAnswers, setCorrectAnswers] = useState(0);
   const [answered, setAnswered] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+
+  if (quizzes.length === 0) {
+    return (
+      <div className="space-y-8 animate-slide-up">
+        <div className="bg-card rounded-2xl border-2 border-dashed border-border p-12 text-center shadow-card">
+          <FileText className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+          <h2 className="text-2xl font-bold text-foreground mb-2">No Quizzes Yet</h2>
+          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+            Upload your notes or type them in to generate quizzes automatically using AI.
+          </p>
+          <Button variant="gradient" size="lg" onClick={onGoToNotes}>
+            <FileText className="w-5 h-5 mr-2" />
+            Add Notes to Generate Quizzes
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const currentQuiz = quizzes[currentIndex];
   const passPercentage = Math.round((correctAnswers / quizzes.length) * 100);

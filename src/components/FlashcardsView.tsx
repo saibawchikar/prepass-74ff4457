@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FlashCard } from "./FlashCard";
 import { Button } from "./ui/button";
 import { PassMeter } from "./PassMeter";
-import { ArrowLeft, ArrowRight, RotateCcw, Shuffle } from "lucide-react";
+import { ArrowLeft, ArrowRight, RotateCcw, Shuffle, FileText } from "lucide-react";
 
 interface Flashcard {
   id: string;
@@ -11,42 +11,32 @@ interface Flashcard {
   strength: "weak" | "okay" | "strong";
 }
 
-const sampleFlashcards: Flashcard[] = [
-  {
-    id: "1",
-    front: "What is Photosynthesis?",
-    back: "The process by which plants convert light energy into chemical energy (glucose) using CO2 and water.",
-    strength: "weak",
-  },
-  {
-    id: "2",
-    front: "Write the Photosynthesis equation",
-    back: "6CO2 + 6H2O + light → C6H12O6 + 6O2",
-    strength: "okay",
-  },
-  {
-    id: "3",
-    front: "Where does Photosynthesis occur?",
-    back: "In chloroplasts, specifically in thylakoid membranes (light reactions) and stroma (Calvin cycle).",
-    strength: "strong",
-  },
-  {
-    id: "4",
-    front: "Newton's First Law of Motion",
-    back: "An object at rest stays at rest, and an object in motion stays in motion unless acted upon by an external force (Law of Inertia).",
-    strength: "weak",
-  },
-  {
-    id: "5",
-    front: "What is F = ma?",
-    back: "Newton's Second Law: Force equals mass times acceleration. The acceleration of an object is directly proportional to the net force and inversely proportional to its mass.",
-    strength: "okay",
-  },
-];
+interface FlashcardsViewProps {
+  flashcards: Flashcard[];
+  onUpdateFlashcards: (flashcards: Flashcard[]) => void;
+  onGoToNotes: () => void;
+}
 
-export const FlashcardsView = () => {
-  const [flashcards, setFlashcards] = useState<Flashcard[]>(sampleFlashcards);
+export const FlashcardsView = ({ flashcards, onUpdateFlashcards, onGoToNotes }: FlashcardsViewProps) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  if (flashcards.length === 0) {
+    return (
+      <div className="space-y-8 animate-slide-up">
+        <div className="bg-card rounded-2xl border-2 border-dashed border-border p-12 text-center shadow-card">
+          <FileText className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+          <h2 className="text-2xl font-bold text-foreground mb-2">No Flashcards Yet</h2>
+          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+            Upload your notes or type them in to generate flashcards automatically using AI.
+          </p>
+          <Button variant="gradient" size="lg" onClick={onGoToNotes}>
+            <FileText className="w-5 h-5 mr-2" />
+            Add Notes to Generate Flashcards
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const currentCard = flashcards[currentIndex];
   
@@ -61,11 +51,10 @@ export const FlashcardsView = () => {
   );
 
   const handleStrengthChange = (strength: "weak" | "okay" | "strong") => {
-    setFlashcards(cards =>
-      cards.map((card, i) =>
-        i === currentIndex ? { ...card, strength } : card
-      )
+    const updated = flashcards.map((card, i) =>
+      i === currentIndex ? { ...card, strength } : card
     );
+    onUpdateFlashcards(updated);
   };
 
   const handleNext = () => {
@@ -78,7 +67,7 @@ export const FlashcardsView = () => {
 
   const handleShuffle = () => {
     const shuffled = [...flashcards].sort(() => Math.random() - 0.5);
-    setFlashcards(shuffled);
+    onUpdateFlashcards(shuffled);
     setCurrentIndex(0);
   };
 
