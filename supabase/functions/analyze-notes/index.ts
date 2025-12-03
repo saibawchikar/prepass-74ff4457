@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { imagesBase64, imageBase64, textContent, type } = await req.json();
+    const { imagesBase64, pdfsBase64, imageBase64, textContent, type } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
@@ -20,16 +20,18 @@ serve(async (req) => {
       throw new Error("AI service is not configured");
     }
 
-    // Support both single image (legacy) and multiple images
+    // Support both single image (legacy) and multiple images/PDFs
     const images = imagesBase64 || (imageBase64 ? [imageBase64] : []);
+    const pdfs = pdfsBase64 || [];
 
     console.log("Processing request with type:", type);
     console.log("Number of images:", images.length);
+    console.log("Number of PDFs:", pdfs.length);
     console.log("Has text:", !!textContent);
 
     const systemPrompt = `You are an expert educational content analyzer. Your task is to analyze study notes and generate high-quality learning materials.
 
-When analyzing notes (either from text or images), you must:
+When analyzing notes (from text, images, or PDF documents), you must:
 1. Extract ALL key concepts, definitions, formulas, dates, and important facts
 2. Generate flashcards with clear question-answer pairs
 3. Create quiz questions (MCQs with 4 options)
@@ -49,29 +51,27 @@ The JSON must follow this exact structure:
   "summary": "Brief 2-3 sentence summary of the content"
 }
 
-Generate at least 5 flashcards and 3 quizzes from the content. Make them challenging but fair. If there are multiple images or sources, combine all the information together.`;
+Generate at least 5 flashcards and 3 quizzes from the content. Make them challenging but fair. If there are multiple sources (images, PDFs, text), combine all the information together.`;
 
     const userContent: any[] = [];
+    const totalFiles = images.length + pdfs.length;
 
-    // Add instruction text
-    if (images.length > 0 && textContent) {
-      userContent.push({
-        type: "text",
-        text: `Analyze these ${images.length} image(s) of study notes along with the following text content. Extract all text using OCR from images, combine with the text content, then generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.\n\nText Content:\n${textContent}`,
-      });
-    } else if (images.length > 0) {
-      userContent.push({
-        type: "text",
-        text: `Analyze these ${images.length} image(s) of study notes. Extract all text using OCR, then generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.`,
-      });
+    // Build instruction text
+    let instructionText = "";
+    if (totalFiles > 0 && textContent) {
+      instructionText = `Analyze these ${totalFiles} file(s) along with the following text content. Extract all text from images using OCR, read the PDF documents, combine with the text content, then generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.\n\nText Content:\n${textContent}`;
+    } else if (totalFiles > 0) {
+      instructionText = `Analyze these ${totalFiles} file(s). Extract all text from images using OCR, read the PDF documents, then generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.`;
     } else if (textContent) {
-      userContent.push({
-        type: "text",
-        text: `Analyze these study notes and generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.\n\nNotes:\n${textContent}`,
-      });
+      instructionText = `Analyze these study notes and generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.\n\nNotes:\n${textContent}`;
     } else {
       throw new Error("No content provided");
     }
+
+    userContent.push({
+      type: "text",
+      text: instructionText,
+    });
 
     // Add all images
     for (const img of images) {
@@ -79,6 +79,17 @@ Generate at least 5 flashcards and 3 quizzes from the content. Make them challen
         type: "image_url",
         image_url: {
           url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`,
+        },
+      });
+    }
+
+    // Add all PDFs (Gemini supports PDF via file_data or as document)
+    for (const pdf of pdfs) {
+      // Gemini can process PDFs as images when sent as data URLs
+      userContent.push({
+        type: "image_url",
+        image_url: {
+          url: pdf.startsWith("data:") ? pdf : `data:application/pdf;base64,${pdf}`,
         },
       });
     }

@@ -4,10 +4,6 @@ import { Textarea } from "./ui/textarea";
 import { FileText, Sparkles, Upload, Image, Loader2, X, File } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import * as pdfjsLib from "pdfjs-dist";
-
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js`;
 
 interface GeneratedContent {
   flashcards: Array<{ front: string; back: string }>;
@@ -24,8 +20,8 @@ interface UploadedFile {
   id: string;
   type: "image" | "pdf";
   name: string;
-  data: string; // base64 for images, extracted text for PDFs
-  preview?: string; // thumbnail for display
+  data: string; // base64 for both images and PDFs
+  preview?: string;
 }
 
 export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
@@ -35,21 +31,13 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const extractTextFromPDF = async (file: File): Promise<string> => {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = "";
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(" ");
-      fullText += pageText + "\n\n";
-    }
-
-    return fullText.trim();
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => resolve(event.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,13 +70,9 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
           continue;
         }
 
-        if (isImage) {
-          const base64 = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (event) => resolve(event.target?.result as string);
-            reader.readAsDataURL(file);
-          });
+        const base64 = await readFileAsBase64(file);
 
+        if (isImage) {
           newFiles.push({
             id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             type: "image",
@@ -97,19 +81,11 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
             preview: base64,
           });
         } else if (isPDF) {
-          toast.info(`Processing ${file.name}...`);
-          const extractedText = await extractTextFromPDF(file);
-          
-          if (!extractedText.trim()) {
-            toast.error(`${file.name}: Could not extract text from PDF`);
-            continue;
-          }
-
           newFiles.push({
             id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             type: "pdf",
             name: file.name,
-            data: extractedText,
+            data: base64,
           });
         }
       }
@@ -143,17 +119,15 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
     setIsLoading(true);
 
     try {
-      // Separate images and PDF text
+      // Separate images and PDFs
       const images = uploadedFiles.filter((f) => f.type === "image").map((f) => f.data);
-      const pdfTexts = uploadedFiles.filter((f) => f.type === "pdf").map((f) => f.data);
-      
-      // Combine all text content
-      const combinedText = [notes.trim(), ...pdfTexts].filter(Boolean).join("\n\n---\n\n");
+      const pdfs = uploadedFiles.filter((f) => f.type === "pdf").map((f) => f.data);
 
       const { data, error } = await supabase.functions.invoke("analyze-notes", {
         body: {
           imagesBase64: images.length > 0 ? images : null,
-          textContent: combinedText || null,
+          pdfsBase64: pdfs.length > 0 ? pdfs : null,
+          textContent: notes.trim() || null,
         },
       });
 
