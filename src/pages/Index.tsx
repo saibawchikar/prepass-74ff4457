@@ -120,7 +120,7 @@ const Index = () => {
       {/* Footer */}
       <footer className="border-t border-border py-6 mt-12">
         <div className="max-w-6xl mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>Built to make you pass. 📚 PassMate © 2024</p>
+          <p>Built to make you pass. 📚 Prepass © 2024</p>
         </div>
       </footer>
     </div>
