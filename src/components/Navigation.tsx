@@ -23,7 +23,7 @@ export const Navigation = ({ activeTab, onTabChange }: NavigationProps) => {
             <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center shadow-glow">
               <GraduationCap className="w-6 h-6 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold text-gradient">PassMate</span>
+            <span className="text-xl font-bold text-gradient">Prepass</span>
           </div>
 
           {/* Desktop Navigation */}
