@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { imageBase64, textContent, type } = await req.json();
+    const { imagesBase64, imageBase64, textContent, type } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
@@ -20,8 +20,11 @@ serve(async (req) => {
       throw new Error("AI service is not configured");
     }
 
+    // Support both single image (legacy) and multiple images
+    const images = imagesBase64 || (imageBase64 ? [imageBase64] : []);
+
     console.log("Processing request with type:", type);
-    console.log("Has image:", !!imageBase64);
+    console.log("Number of images:", images.length);
     console.log("Has text:", !!textContent);
 
     const systemPrompt = `You are an expert educational content analyzer. Your task is to analyze study notes and generate high-quality learning materials.
@@ -46,29 +49,38 @@ The JSON must follow this exact structure:
   "summary": "Brief 2-3 sentence summary of the content"
 }
 
-Generate at least 5 flashcards and 3 quizzes from the content. Make them challenging but fair.`;
+Generate at least 5 flashcards and 3 quizzes from the content. Make them challenging but fair. If there are multiple images or sources, combine all the information together.`;
 
-    let userContent: any;
+    const userContent: any[] = [];
 
-    if (imageBase64) {
-      // OCR + Analysis from image
-      userContent = [
-        {
-          type: "text",
-          text: "Analyze this image of study notes. Extract all text using OCR, then generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.",
-        },
-        {
-          type: "image_url",
-          image_url: {
-            url: imageBase64.startsWith("data:") ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`,
-          },
-        },
-      ];
+    // Add instruction text
+    if (images.length > 0 && textContent) {
+      userContent.push({
+        type: "text",
+        text: `Analyze these ${images.length} image(s) of study notes along with the following text content. Extract all text using OCR from images, combine with the text content, then generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.\n\nText Content:\n${textContent}`,
+      });
+    } else if (images.length > 0) {
+      userContent.push({
+        type: "text",
+        text: `Analyze these ${images.length} image(s) of study notes. Extract all text using OCR, then generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.`,
+      });
     } else if (textContent) {
-      // Analysis from text
-      userContent = `Analyze these study notes and generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.\n\nNotes:\n${textContent}`;
+      userContent.push({
+        type: "text",
+        text: `Analyze these study notes and generate flashcards, quiz questions, and identify important exam-likely points. Return ONLY valid JSON.\n\nNotes:\n${textContent}`,
+      });
     } else {
       throw new Error("No content provided");
+    }
+
+    // Add all images
+    for (const img of images) {
+      userContent.push({
+        type: "image_url",
+        image_url: {
+          url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`,
+        },
+      });
     }
 
     console.log("Sending request to AI gateway...");
@@ -91,7 +103,7 @@ Generate at least 5 flashcards and 3 quizzes from the content. Make them challen
     if (!response.ok) {
       const errorText = await response.text();
       console.error("AI gateway error:", response.status, errorText);
-      
+
       if (response.status === 429) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }), {
           status: 429,
@@ -104,7 +116,7 @@ Generate at least 5 flashcards and 3 quizzes from the content. Make them challen
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      
+
       throw new Error(`AI service error: ${response.status}`);
     }
 
@@ -130,7 +142,7 @@ Generate at least 5 flashcards and 3 quizzes from the content. Make them challen
     cleanedContent = cleanedContent.trim();
 
     console.log("Parsing AI response...");
-    
+
     let parsedContent;
     try {
       parsedContent = JSON.parse(cleanedContent);
