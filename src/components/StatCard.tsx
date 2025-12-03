@@ -34,16 +34,16 @@ export const StatCard = ({
 
   return (
     <div className={cn(
-      "rounded-xl border-2 p-5 transition-all hover:shadow-card",
+      "rounded-xl border-2 p-4 transition-all hover:shadow-card overflow-hidden",
       variantClasses[variant]
     )}>
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="mt-1 text-3xl font-bold text-foreground">{value}</p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-muted-foreground truncate">{title}</p>
+          <p className="mt-1 text-2xl font-bold text-foreground truncate">{value}</p>
           {subtitle && (
             <p className={cn(
-              "mt-1 text-sm",
+              "mt-1 text-xs truncate",
               trend === "up" && "text-success",
               trend === "down" && "text-destructive",
               !trend && "text-muted-foreground"
@@ -55,10 +55,10 @@ export const StatCard = ({
           )}
         </div>
         <div className={cn(
-          "rounded-lg p-2.5",
+          "rounded-lg p-2 shrink-0",
           iconVariantClasses[variant]
         )}>
-          <Icon className="w-5 h-5" />
+          <Icon className="w-4 h-4" />
         </div>
       </div>
     </div>
