@@ -1,9 +1,13 @@
 import { useState, useRef } from "react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
-import { FileText, Sparkles, Upload, Image, Loader2, X } from "lucide-react";
+import { FileText, Sparkles, Upload, Image, Loader2, X, File } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Set up PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js`;
 
 interface GeneratedContent {
   flashcards: Array<{ front: string; back: string }>;
@@ -16,47 +20,140 @@ interface NotesViewProps {
   onGenerateFlashcards: (content: GeneratedContent) => void;
 }
 
+interface UploadedFile {
+  id: string;
+  type: "image" | "pdf";
+  name: string;
+  data: string; // base64 for images, extracted text for PDFs
+  preview?: string; // thumbnail for display
+}
+
 export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
   const [notes, setNotes] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const extractTextFromPDF = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
 
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please upload an image file");
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(" ");
+      fullText += pageText + "\n\n";
+    }
+
+    return fullText.trim();
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const remainingSlots = 10 - uploadedFiles.length;
+    if (remainingSlots <= 0) {
+      toast.error("Maximum 10 files allowed");
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Image must be less than 10MB");
-      return;
-    }
+    const filesToProcess = Array.from(files).slice(0, remainingSlots);
+    setIsProcessingFile(true);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setUploadedImage(event.target?.result as string);
-      toast.success("Image uploaded! Click 'Analyze Notes' to process.");
-    };
-    reader.readAsDataURL(file);
+    try {
+      const newFiles: UploadedFile[] = [];
+
+      for (const file of filesToProcess) {
+        const isImage = file.type.startsWith("image/");
+        const isPDF = file.type === "application/pdf";
+
+        if (!isImage && !isPDF) {
+          toast.error(`${file.name}: Only images and PDFs are supported`);
+          continue;
+        }
+
+        if (file.size > 20 * 1024 * 1024) {
+          toast.error(`${file.name}: File must be less than 20MB`);
+          continue;
+        }
+
+        if (isImage) {
+          const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (event) => resolve(event.target?.result as string);
+            reader.readAsDataURL(file);
+          });
+
+          newFiles.push({
+            id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            type: "image",
+            name: file.name,
+            data: base64,
+            preview: base64,
+          });
+        } else if (isPDF) {
+          toast.info(`Processing ${file.name}...`);
+          const extractedText = await extractTextFromPDF(file);
+          
+          if (!extractedText.trim()) {
+            toast.error(`${file.name}: Could not extract text from PDF`);
+            continue;
+          }
+
+          newFiles.push({
+            id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            type: "pdf",
+            name: file.name,
+            data: extractedText,
+          });
+        }
+      }
+
+      if (newFiles.length > 0) {
+        setUploadedFiles((prev) => [...prev, ...newFiles]);
+        toast.success(`${newFiles.length} file(s) added!`);
+      }
+    } catch (error) {
+      console.error("Error processing files:", error);
+      toast.error("Error processing files");
+    } finally {
+      setIsProcessingFile(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const removeFile = (id: string) => {
+    setUploadedFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
   const handleGenerate = async () => {
-    if (!notes.trim() && !uploadedImage) {
-      toast.error("Please add notes or upload an image");
+    const hasContent = notes.trim() || uploadedFiles.length > 0;
+    if (!hasContent) {
+      toast.error("Please add notes, images, or PDFs");
       return;
     }
 
     setIsLoading(true);
 
     try {
+      // Separate images and PDF text
+      const images = uploadedFiles.filter((f) => f.type === "image").map((f) => f.data);
+      const pdfTexts = uploadedFiles.filter((f) => f.type === "pdf").map((f) => f.data);
+      
+      // Combine all text content
+      const combinedText = [notes.trim(), ...pdfTexts].filter(Boolean).join("\n\n---\n\n");
+
       const { data, error } = await supabase.functions.invoke("analyze-notes", {
         body: {
-          imageBase64: uploadedImage,
-          textContent: notes.trim() || null,
+          imagesBase64: images.length > 0 ? images : null,
+          textContent: combinedText || null,
         },
       });
 
@@ -71,10 +168,10 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
 
       toast.success(`Generated ${data.flashcards?.length || 0} flashcards and ${data.quizzes?.length || 0} quizzes!`);
       onGenerateFlashcards(data);
-      
+
       // Clear inputs after successful generation
       setNotes("");
-      setUploadedImage(null);
+      setUploadedFiles([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -86,12 +183,8 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
     }
   };
 
-  const removeImage = () => {
-    setUploadedImage(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
+  const imageCount = uploadedFiles.filter((f) => f.type === "image").length;
+  const pdfCount = uploadedFiles.filter((f) => f.type === "pdf").length;
 
   return (
     <div className="space-y-8 animate-slide-up">
@@ -104,35 +197,72 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
           Add Your Notes
         </h2>
 
-        {/* Image Upload Area */}
-        {uploadedImage ? (
-          <div className="mb-4 relative">
-            <div className="relative rounded-xl overflow-hidden border-2 border-primary/30 bg-primary/5">
-              <img
-                src={uploadedImage}
-                alt="Uploaded notes"
-                className="w-full max-h-64 object-contain"
-              />
-              <button
-                onClick={removeImage}
-                className="absolute top-2 right-2 p-1.5 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+        {/* Uploaded Files Display */}
+        {uploadedFiles.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-foreground">
+                Uploaded Files ({uploadedFiles.length}/10)
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {imageCount > 0 && `${imageCount} image${imageCount > 1 ? "s" : ""}`}
+                {imageCount > 0 && pdfCount > 0 && " • "}
+                {pdfCount > 0 && `${pdfCount} PDF${pdfCount > 1 ? "s" : ""}`}
+              </span>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground text-center">
-              Image ready for OCR analysis
-            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+              {uploadedFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="relative group rounded-xl overflow-hidden border-2 border-primary/30 bg-primary/5"
+                >
+                  {file.type === "image" ? (
+                    <img
+                      src={file.preview}
+                      alt={file.name}
+                      className="w-full h-24 object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-24 flex flex-col items-center justify-center bg-muted">
+                      <File className="w-8 h-8 text-primary mb-1" />
+                      <span className="text-xs text-muted-foreground px-1 truncate w-full text-center">
+                        {file.name}
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => removeFile(file.id)}
+                    className="absolute top-1 right-1 p-1 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        ) : (
+        )}
+
+        {/* Upload Area */}
+        {uploadedFiles.length < 10 && (
           <div
-            onClick={() => fileInputRef.current?.click()}
-            className="mb-4 border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
+            onClick={() => !isProcessingFile && fileInputRef.current?.click()}
+            className={`mb-4 border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all ${
+              isProcessingFile ? "opacity-50 pointer-events-none" : ""
+            }`}
           >
-            <Image className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-            <p className="text-foreground font-medium">Upload notes image</p>
+            {isProcessingFile ? (
+              <Loader2 className="w-10 h-10 mx-auto text-primary mb-3 animate-spin" />
+            ) : (
+              <div className="flex items-center justify-center gap-4 mb-3">
+                <Image className="w-10 h-10 text-muted-foreground" />
+                <FileText className="w-10 h-10 text-muted-foreground" />
+              </div>
+            )}
+            <p className="text-foreground font-medium">
+              {isProcessingFile ? "Processing files..." : "Upload images or PDFs"}
+            </p>
             <p className="text-sm text-muted-foreground mt-1">
-              Take a photo of your handwritten or printed notes
+              Drop up to 10 files • Photos of notes, textbook pages, or PDF documents
             </p>
           </div>
         )}
@@ -140,8 +270,9 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
         <input
           type="file"
           ref={fileInputRef}
-          onChange={handleImageUpload}
-          accept="image/*"
+          onChange={handleFileUpload}
+          accept="image/*,.pdf,application/pdf"
+          multiple
           className="hidden"
         />
 
@@ -168,7 +299,7 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
             variant="gradient"
             size="lg"
             onClick={handleGenerate}
-            disabled={(!notes.trim() && !uploadedImage) || isLoading}
+            disabled={(!notes.trim() && uploadedFiles.length === 0) || isLoading || isProcessingFile}
             className="flex-1 sm:flex-none"
           >
             {isLoading ? (
@@ -189,14 +320,15 @@ export const NotesView = ({ onGenerateFlashcards }: NotesViewProps) => {
             size="lg"
             className="flex-1 sm:flex-none"
             onClick={() => fileInputRef.current?.click()}
+            disabled={uploadedFiles.length >= 10 || isProcessingFile}
           >
             <Upload className="w-5 h-5" />
-            Upload Image
+            Add Files
           </Button>
         </div>
 
         <p className="text-xs text-muted-foreground text-center mt-4">
-          💡 Tip: Upload a clear photo of your notes for best OCR results. The AI will extract text and create flashcards, quizzes, and key points automatically!
+          💡 Tip: Upload up to 10 images or PDFs at once. The AI will extract text and create flashcards, quizzes, and key points automatically!
         </p>
       </div>
     </div>
