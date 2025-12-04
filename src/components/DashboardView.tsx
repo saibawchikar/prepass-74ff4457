@@ -36,7 +36,7 @@ export const DashboardView = ({ stats, onStartStudy, importantPoints = [] }: Das
             </div>
 
             <div className="max-w-md">
-              <PassMeter percentage={stats.passPercentage} size="lg" />
+              <PassMeter percentage={stats.passPercentage} size="lg" hasData={hasContent} />
             </div>
 
             {hasContent && stats.passPercentage < 80 && (
