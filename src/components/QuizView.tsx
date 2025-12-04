@@ -25,15 +25,15 @@ export const QuizView = ({ quizzes, onGoToNotes }: QuizViewProps) => {
   if (quizzes.length === 0) {
     return (
       <div className="space-y-8 animate-slide-up">
-        <div className="bg-card rounded-2xl border-2 border-dashed border-border p-12 text-center shadow-card">
+        <div className="bg-card rounded-2xl border-2 border-dashed border-border p-6 md:p-12 text-center shadow-card">
           <FileText className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
           <h2 className="text-2xl font-bold text-foreground mb-2">No Quizzes Yet</h2>
           <p className="text-muted-foreground mb-6 max-w-md mx-auto">
             Upload your notes or type them in to generate quizzes automatically using AI.
           </p>
-          <Button variant="gradient" size="lg" onClick={onGoToNotes}>
-            <FileText className="w-5 h-5 mr-2" />
-            Add Notes to Generate Quizzes
+          <Button variant="gradient" size="lg" onClick={onGoToNotes} className="w-full sm:w-auto">
+            <FileText className="w-5 h-5 mr-2 shrink-0" />
+            <span className="truncate">Add Notes to Generate Quizzes</span>
           </Button>
         </div>
       </div>
