@@ -1,24 +1,26 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Navigation } from "@/components/Navigation";
 import { DashboardView } from "@/components/DashboardView";
 import { NotesView } from "@/components/NotesView";
 import { FlashcardsView } from "@/components/FlashcardsView";
 import { QuizView } from "@/components/QuizView";
 import { Toaster } from "@/components/ui/sonner";
-
-interface Flashcard {
-  id: string;
-  front: string;
-  back: string;
-  strength: "weak" | "okay" | "strong";
-}
-
-interface Quiz {
-  id: string;
-  question: string;
-  options: string[];
-  correctIndex: number;
-}
+import { useAuth } from "@/hooks/useAuth";
+import { useUserData } from "@/hooks/useUserData";
+import { Button } from "@/components/ui/button";
+import { Loader2, LogOut, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface GeneratedContent {
   flashcards: Array<{ front: string; back: string }>;
@@ -28,10 +30,28 @@ interface GeneratedContent {
 }
 
 const Index = () => {
+  const navigate = useNavigate();
+  const { user, loading: authLoading, signOut } = useAuth();
+  const { 
+    flashcards, 
+    quizzes, 
+    importantPoints, 
+    loading: dataLoading,
+    addFlashcards,
+    addQuizzes,
+    addImportantPoints,
+    updateFlashcard,
+    deleteAllData,
+    setFlashcards,
+  } = useUserData();
+  
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
-  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-  const [importantPoints, setImportantPoints] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/auth');
+    }
+  }, [user, authLoading, navigate]);
 
   const stats = {
     flashcardsStudied: flashcards.length,
@@ -56,29 +76,22 @@ const Index = () => {
     }
   };
 
-  const handleGenerateContent = (content: GeneratedContent) => {
-    // Convert generated flashcards to our format
-    const newFlashcards: Flashcard[] = content.flashcards.map((fc, index) => ({
-      id: `fc-${Date.now()}-${index}`,
-      front: fc.front,
-      back: fc.back,
-      strength: "weak" as const,
-    }));
-
-    // Convert generated quizzes to our format
-    const newQuizzes: Quiz[] = content.quizzes.map((q, index) => ({
-      id: `quiz-${Date.now()}-${index}`,
-      question: q.question,
-      options: q.options,
-      correctIndex: q.correctIndex,
-    }));
-
-    setFlashcards(prev => [...prev, ...newFlashcards]);
-    setQuizzes(prev => [...prev, ...newQuizzes]);
-    setImportantPoints(prev => [...prev, ...content.importantPoints]);
+  const handleGenerateContent = async (content: GeneratedContent) => {
+    await Promise.all([
+      addFlashcards(content.flashcards),
+      addQuizzes(content.quizzes),
+      addImportantPoints(content.importantPoints),
+    ]);
   };
 
-  const handleUpdateFlashcards = (updated: Flashcard[]) => {
+  const handleUpdateFlashcards = (updated: typeof flashcards) => {
+    // Find changed flashcard and update in DB
+    updated.forEach(card => {
+      const original = flashcards.find(f => f.id === card.id);
+      if (original && original.strength !== card.strength) {
+        updateFlashcard(card.id, card.strength);
+      }
+    });
     setFlashcards(updated);
   };
 
@@ -86,9 +99,56 @@ const Index = () => {
     setActiveTab("notes");
   };
 
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth');
+  };
+
+  if (authLoading || dataLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
   return (
     <div className="min-h-screen bg-background">
       <Toaster position="top-center" />
+      
+      {/* User Menu */}
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10">
+              <Trash2 className="w-4 h-4 mr-1" />
+              Delete All
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete all your data?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete all your flashcards, quizzes, and important points. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={deleteAllData} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Delete Everything
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        
+        <Button variant="ghost" size="sm" onClick={handleSignOut}>
+          <LogOut className="w-4 h-4 mr-1" />
+          Logout
+        </Button>
+      </div>
+
       <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
       
       <main className="max-w-6xl mx-auto px-4 py-8">
